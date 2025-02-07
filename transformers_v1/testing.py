@@ -1,31 +1,21 @@
-from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
-# Load the dataset
-ds = load_dataset("fka/awesome-chatgpt-prompts")
+# Load DeepSeek model and tokenizer
+MODEL_NAME = "deepseek-ai/deepseek-llm-7b-chat"  # Change this if using a different version
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto")
 
-# Print a sample prompt
-print(ds['train'][0])
+# Chatbot loop
+print("DeepSeek Chatbot: Type 'exit' to end chat")
+while True:
+    user_input = input("\nYou: ")
+    if user_input.lower() == "exit":
+        print("Goodbye!")
+        break
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+    inputs = tokenizer(user_input, return_tensors="pt").to("cuda")
+    output = model.generate(**inputs, max_new_tokens=100)
+    response = tokenizer.decode(output[0], skip_special_tokens=True)
 
-# model_name = "mistralai/Mistral-7B-Instruct"  # You can use other models as well
-model_name = "gpt2"  # You can use other models as well
-
-# Load the model and tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
-
-# Create a text generation pipeline
-generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-
-# Get a sample prompt from the dataset
-prompt = ds['train'][9]['prompt']
-
-# Generate a response
-response = generator(prompt, max_length=200, temperature=0.7)
-
-# Print the output
-print(response[0]['generated_text'])
-
-
-
+    print("\nBot:", response)

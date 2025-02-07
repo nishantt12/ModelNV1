@@ -1,5 +1,5 @@
 import validation
-from datasets import load_dataset, DatasetDict, Dataset
+from datasets import load_dataset, DatasetDict, Dataset, tqdm
 from datasets.features import features
 from transformers.commands import train
 from transformers import AutoTokenizer
@@ -41,18 +41,48 @@ data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
 print(data_collator)
 
-#
-# DatasetDict({
-#     train: Dataset({
-#         features: ['sentence1', 'sentence2', 'label', 'idx'],
-#         num_rows: 3668
-#     })
-#     validation: Dataset({
-#         features: ['sentence1', 'sentence2', 'label', 'idx'],
-#         num_rows: 408
-#     })
-#     test: Dataset({
-#         features: ['sentence1', 'sentence2', 'label', 'idx'],
-#         num_rows: 1725
-#     })
-# })
+from accelerate import Accelerator
+from transformers import AdamW, AutoModelForSequenceClassification, get_scheduler
+
+accelerator = Accelerator()
+
+model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2)
+optimizer = AdamW(model.parameters(), lr=3e-5)
+
+from torch.utils.data import DataLoader
+
+train_dataloader = DataLoader(
+    tokenized_datasets["train"], shuffle=True, batch_size=8, collate_fn=data_collator
+)
+eval_dataloader = DataLoader(
+    tokenized_datasets["validation"], batch_size=8, collate_fn=data_collator
+)
+
+
+
+train_dl, eval_dl, model, optimizer = accelerator.prepare(
+    train_dataloader, eval_dataloader, model, optimizer
+)
+
+num_epochs = 3
+num_training_steps = num_epochs * len(train_dl)
+lr_scheduler = get_scheduler(
+    "linear",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=num_training_steps,
+)
+
+progress_bar = tqdm(range(num_training_steps))
+
+model.train()
+for epoch in range(num_epochs):
+    for batch in train_dl:
+        outputs = model(**batch)
+        loss = outputs.loss
+        accelerator.backward(loss)
+
+        optimizer.step()
+        lr_scheduler.step()
+        optimizer.zero_grad()
+        progress_bar.update(1)
